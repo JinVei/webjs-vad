@@ -17,6 +17,9 @@ interface RealTimeVADCallbacks {
   /** Callback to run after each frame. The size (number of samples) of a frame is given by `frameSamples`. */
   onFrameProcessed: (probabilities: SpeechProbabilities) => any
 
+  /**  Callback like onFrameProcessed but given audio parameter */
+  onFrameProcessedWithAudio: (probabilities: SpeechProbabilities, audio: Float32Array) => any
+
   /** Callback to run if speech start was detected but `onSpeechEnd` will not be run because the
    * audio segment is smaller than `minSpeechFrames`.
    */
@@ -50,18 +53,18 @@ type AssetOptions = {
 
 interface RealTimeVADOptionsWithoutStream
   extends FrameProcessorOptions,
-    RealTimeVADCallbacks,
-    OrtOptions,
-    AssetOptions {
+  RealTimeVADCallbacks,
+  OrtOptions,
+  AssetOptions {
   additionalAudioConstraints?: AudioConstraints
   stream: undefined
 }
 
 interface RealTimeVADOptionsWithStream
   extends FrameProcessorOptions,
-    RealTimeVADCallbacks,
-    OrtOptions,
-    AssetOptions {
+  RealTimeVADCallbacks,
+  OrtOptions,
+  AssetOptions {
   stream: MediaStream
 }
 
@@ -73,7 +76,8 @@ export type RealTimeVADOptions =
 
 export const defaultRealTimeVADOptions: RealTimeVADOptions = {
   ...defaultFrameProcessorOptions,
-  onFrameProcessed: (probabilities) => {},
+  onFrameProcessed: (probabilities) => { },
+  onFrameProcessedWithAudio: () => { },
   onVADMisfire: () => {
     log.debug("VAD misfire")
   },
@@ -135,7 +139,7 @@ export class MicVAD {
     private audioNodeVAD: AudioNodeVAD,
     private sourceNode: MediaStreamAudioSourceNode,
     private listening = false
-  ) {}
+  ) { }
 
   pause = () => {
     this.audioNodeVAD.pause()
@@ -247,11 +251,11 @@ export class AudioNodeVAD {
     public options: RealTimeVADOptions,
     private frameProcessor: FrameProcessor,
     private entryNode: AudioWorkletNode
-  ) {}
+  ) { }
 
   pause = () => {
     const ev = this.frameProcessor.pause()
-    this.handleFrameProcessorEvent(ev)
+    this.handleFrameProcessorEvent(ev, null)
   }
 
   start = () => {
@@ -264,7 +268,7 @@ export class AudioNodeVAD {
 
   processFrame = async (frame: Float32Array) => {
     const ev = await this.frameProcessor.process(frame)
-    this.handleFrameProcessorEvent(ev)
+    this.handleFrameProcessorEvent(ev, frame)
   }
 
   handleFrameProcessorEvent = (
@@ -272,10 +276,14 @@ export class AudioNodeVAD {
       probs: SpeechProbabilities
       msg: Message
       audio: Float32Array
-    }>
+    }>,
+    frame: Float32Array | null
   ) => {
     if (ev.probs !== undefined) {
       this.options.onFrameProcessed(ev.probs)
+      if (frame != null) {
+        this.options.onFrameProcessedWithAudio(ev.probs, frame)
+      }
     }
     switch (ev.msg) {
       case Message.SpeechStart:
